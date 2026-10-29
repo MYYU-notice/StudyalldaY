@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSA 进位保存阵列乘法器 · 数据流动画</title>
+<style>
+  :root{
+    --bg:#f7f8fb;
+    --panel:#ffffff;
+    --ink:#172033;
+    --muted:#64748b;
+    --line:#a7b0bf;
+    --sum:#2563eb;
+    --carry:#f59e0b;
+    --active:#ef4444;
+    --pp:#7c3aed;
+    --ok:#16a34a;
+    --border:#dbe1ea;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:Inter,"Microsoft YaHei","PingFang SC",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  }
+  .app{max-width:1480px;margin:0 auto;padding:22px}
+  .topbar{
+    display:grid;
+    grid-template-columns:1.05fr 1.15fr 1.3fr;
+    gap:14px;
+    margin-bottom:14px;
+  }
+  .card{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:16px 18px;
+  }
+  .card h2,.card h3{margin:0 0 10px}
+  .card h2{font-size:22px}
+  .card h3{font-size:16px}
+  .small{font-size:13px;color:var(--muted);line-height:1.6}
+  .input-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .bits{
+    width:104px;
+    padding:10px 12px;
+    font:700 20px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    letter-spacing:3px;
+    border:1px solid var(--border);
+    border-radius:10px;
+    background:#fff;
+    color:var(--ink);
+    text-align:center;
+  }
+  .mul-sign{font-size:26px;font-weight:800}
+  .result-badge{
+    display:inline-flex;align-items:center;gap:8px;
+    margin-top:12px;padding:8px 11px;border-radius:10px;
+    background:#eef6ff;color:#174ea6;font-weight:700;
+  }
+  .pp-grid{
+    display:grid;
+    grid-template-columns:auto 1fr;
+    gap:5px 10px;
+    font:600 13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  .pp-grid .label{color:var(--muted)}
+  .pp-grid .value{letter-spacing:2px}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  button,select{
+    min-height:38px;border:1px solid var(--border);border-radius:10px;
+    background:#fff;color:var(--ink);padding:8px 12px;font-size:14px;cursor:pointer;
+  }
+  button:hover{background:#f2f5f9}
+  button.primary{background:#172033;color:#fff;border-color:#172033}
+  button.primary:hover{background:#27334b}
+  .range-wrap{display:flex;align-items:center;gap:10px;margin-top:12px}
+  input[type=range]{width:100%}
+  .step-chip{
+    min-width:64px;text-align:center;font:700 13px ui-monospace,SFMono-Regular,Menlo,monospace;
+    padding:6px 8px;border-radius:999px;background:#eef2f7;color:#334155;
+  }
+
+  .main-grid{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) 330px;
+    gap:14px;
+    align-items:start;
+  }
+  .diagram-card{padding:10px 10px 6px}
+  .diagram-title{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:4px 8px 8px;gap:10px;flex-wrap:wrap;
+  }
+  .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+  .legend span::before{
+    content:"";display:inline-block;width:14px;height:3px;margin-right:5px;vertical-align:middle;border-radius:3px;
+  }
+  .legend .lpp::before{background:var(--pp)}
+  .legend .lsum::before{background:var(--sum)}
+  .legend .lcarry::before{background:var(--carry)}
+  .legend .lactive::before{background:var(--active)}
+  .svg-wrap{width:100%;overflow-x:auto;border-radius:12px;background:#fcfdff}
+  svg{display:block;min-width:980px;width:100%;height:auto}
+  .wire{stroke:var(--line);stroke-width:2;fill:none}
+  .sum-wire{stroke:var(--sum)}
+  .carry-wire{stroke:var(--carry);stroke-dasharray:7 6}
+  .pp-wire{stroke:var(--pp)}
+  .stage-wire{transition:.25s opacity,.25s stroke,.25s stroke-width}
+  .stage-wire.dim{opacity:.24}
+  .stage-wire.active{
+    opacity:1;stroke:var(--active)!important;stroke-width:3.4;
+    stroke-dasharray:10 8;animation:flow .75s linear infinite;
+  }
+  .stage-wire.done{opacity:.82}
+  @keyframes flow{to{stroke-dashoffset:-36}}
+  .gate rect{
+    fill:#fff;stroke:#20293a;stroke-width:2.2;rx:10;ry:10;transition:.25s;
+  }
+  .gate .kind{font-size:22px;font-weight:800;fill:#20293a}
+  .gate .io{font-size:11px;fill:#64748b}
+  .gate.active rect{stroke:var(--active);stroke-width:4;filter:drop-shadow(0 0 5px rgba(239,68,68,.18))}
+  .gate.done rect{stroke:#64748b}
+  .gate.active .kind{fill:var(--active)}
+  .stage-box{fill:none;stroke:#cbd5e1;stroke-width:2;rx:14;ry:14}
+  .stage-box.active{stroke:var(--active);stroke-width:3}
+  .stage-label{font-size:13px;font-weight:700;fill:#475569}
+  .src-label{font-size:13px;font-weight:700;fill:#334155}
+  .src-value{font-size:12px;font-weight:800;fill:var(--pp)}
+  .out-label{font-size:16px;font-weight:800;fill:#334155}
+  .out-value{font-size:14px;font-weight:800;fill:#16a34a}
+  .weight{font-size:12px;fill:#94a3b8}
+  .side h3{font-size:18px}
+  .step-title{font-size:20px;font-weight:800;margin:4px 0 8px}
+  .step-text{font-size:14px;line-height:1.75;color:#334155}
+  .calc-box{
+    margin-top:14px;padding:12px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0;
+    font:600 13px/1.75 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    white-space:pre-wrap;
+  }
+  .flow-list{margin:14px 0 0;padding:0;list-style:none}
+  .flow-list li{
+    display:flex;gap:9px;align-items:flex-start;padding:8px 0;border-bottom:1px dashed #e2e8f0;
+    font-size:13px;line-height:1.55;
+  }
+  .dot{width:9px;height:9px;border-radius:50%;margin-top:6px;flex:none}
+  .dot.sum{background:var(--sum)} .dot.carry{background:var(--carry)} .dot.pp{background:var(--pp)}
+  .footer-note{margin-top:10px;font-size:12px;color:#94a3b8}
+  .pulse{animation:pulse 1s ease-in-out infinite}
+  @keyframes pulse{50%{opacity:.35}}
+  @media (max-width:1050px){
+    .topbar{grid-template-columns:1fr}
+    .main-grid{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <section class="card">
+      <h2>4×4 CSA 乘法器</h2>
+      <div class="input-row">
+        <input id="aInput" class="bits" value="1010" maxlength="4" aria-label="被乘数 A">
+        <span class="mul-sign">×</span>
+        <input id="bInput" class="bits" value="0111" maxlength="4" aria-label="乘数 B">
+      </div>
+      <div class="result-badge">
+        <span>最终乘积</span>
+        <span id="resultBits">01000110</span>
+        <span id="resultDec">= 70</span>
+      </div>
+      <div class="small" style="margin-top:8px">默认示例：A=1010₂(10)，B=0111₂(7)。</div>
+    </section>
+
+    <section class="card">
+      <h3>部分积（8 位对齐）</h3>
+      <div class="pp-grid">
+        <div class="label">PP₀ = A×B₀</div><div id="pp0" class="value">00001010</div>
+        <div class="label">PP₁ = A×B₁</div><div id="pp1" class="value">00010100</div>
+        <div class="label">PP₂ = A×B₂</div><div id="pp2" class="value">00101000</div>
+        <div class="label">PP₃ = A×B₃</div><div id="pp3" class="value">00000000</div>
+      </div>
+      <div class="small" style="margin-top:9px">CSA 不逐行等待完整进位，而是把同权重列中的 bit 分层压缩。</div>
+    </section>
+
+    <section class="card">
+      <div class="controls">
+        <button id="resetBtn">重新开始</button>
+        <button id="prevBtn">上一步</button>
+        <button id="nextBtn" class="primary">下一步</button>
+        <button id="autoBtn">自动播放</button>
+        <select id="speedSel" aria-label="播放速度">
+          <option value="1500">慢速</option>
+          <option value="900" selected>正常</option>
+          <option value="500">快速</option>
+        </select>
+      </div>
+      <div class="range-wrap">
+        <input id="timeline" type="range" min="0" max="7" value="0" step="1" aria-label="步骤进度">
+        <span id="stepChip" class="step-chip">0 / 7</span>
+      </div>
+      <div class="small" style="margin-top:8px">可单步、自动播放或拖动时间轴查看每一层的数据变化。</div>
+    </section>
+  </div>
+
+  <div class="main-grid">
+    <section class="card diagram-card">
+      <div class="diagram-title">
+        <strong>数据流：部分积 → CSA 第 1 层 → CSA 第 2 层 → 最终横向进位合并</strong>
+        <div class="legend">
+          <span class="lpp">部分积</span>
+          <span class="lsum">Sum</span>
+          <span class="lcarry">Carry</span>
+          <span class="lactive">当前步骤</span>
+        </div>
+      </div>
+      <div class="svg-wrap">
+        <svg id="circuit" viewBox="0 0 1200 690" role="img" aria-label="4位进位保存阵列乘法器数据流图">
+          <defs>
+            <marker id="arrowGray" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+            </marker>
+            <marker id="arrowActive" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#ef4444"/>
+            </marker>
+          </defs>
+
+          <!-- weight labels -->
+          <g>
+            <text class="weight" x="170" y="675">权重 2⁶</text>
+            <text class="weight" x="330" y="675">2⁵</text>
+            <text class="weight" x="490" y="675">2⁴</text>
+            <text class="weight" x="650" y="675">2³</text>
+            <text class="weight" x="810" y="675">2²</text>
+            <text class="weight" x="970" y="675">2¹</text>
+            <text class="weight" x="1110" y="675">2⁰</text>
+          </g>
+
+          <!-- source labels -->
+          <g id="ppLabels">
+            <text class="src-label" x="470" y="42">0</text>
+            <text class="src-label" x="505" y="62">A₃B₁=<tspan id="v31" class="src-value">?</tspan></text>
+            <text class="src-label" x="510" y="84">A₂B₂=<tspan id="v22" class="src-value">?</tspan></text>
+
+            <text class="src-label" x="630" y="42">A₃B₀=<tspan id="v30" class="src-value">?</tspan></text>
+            <text class="src-label" x="655" y="64">A₂B₁=<tspan id="v21" class="src-value">?</tspan></text>
+            <text class="src-label" x="660" y="86">A₁B₂=<tspan id="v12" class="src-value">?</tspan></text>
+
+            <text class="src-label" x="790" y="42">A₂B₀=<tspan id="v20" class="src-value">?</tspan></text>
+            <text class="src-label" x="815" y="64">A₁B₁=<tspan id="v11" class="src-value">?</tspan></text>
+            <text class="src-label" x="820" y="86">A₀B₂=<tspan id="v02" class="src-value">?</tspan></text>
+
+            <text class="src-label" x="950" y="42">A₁B₀=<tspan id="v10" class="src-value">?</tspan></text>
+            <text class="src-label" x="975" y="64">A₀B₁=<tspan id="v01" class="src-value">?</tspan></text>
+
+            <text class="src-label" x="1084" y="42">A₀B₀=<tspan id="v00" class="src-value">?</tspan></text>
+
+            <text class="src-label" x="295" y="240">A₃B₂=<tspan id="v32" class="src-value">?</tspan></text>
+            <text class="src-label" x="330" y="274">A₂B₃=<tspan id="v23" class="src-value">?</tspan></text>
+            <text class="src-label" x="492" y="274">A₁B₃=<tspan id="v13" class="src-value">?</tspan></text>
+            <text class="src-label" x="652" y="274">A₀B₃=<tspan id="v03" class="src-value">?</tspan></text>
+
+            <text class="src-label" x="125" y="470">A₃B₃=<tspan id="v33" class="src-value">?</tspan></text>
+          </g>
+
+          <!-- PP input wires stage 1 -->
+          <g data-stage="1">
+            <path class="wire pp-wire stage-wire" d="M490 48 V135"/>
+            <path class="wire pp-wire stage-wire" d="M535 68 V135"/>
+            <path class="wire pp-wire stage-wire" d="M560 90 V135"/>
+            <path class="wire pp-wire stage-wire" d="M650 48 V135"/>
+            <path class="wire pp-wire stage-wire" d="M695 70 V135"/>
+            <path class="wire pp-wire stage-wire" d="M720 92 V135"/>
+            <path class="wire pp-wire stage-wire" d="M810 48 V135"/>
+            <path class="wire pp-wire stage-wire" d="M855 70 V135"/>
+            <path class="wire pp-wire stage-wire" d="M880 92 V135"/>
+            <path class="wire pp-wire stage-wire" d="M970 48 V135"/>
+            <path class="wire pp-wire stage-wire" d="M1015 70 V135"/>
+            <path class="wire pp-wire stage-wire" d="M1120 48 V625"/>
+          </g>
+
+          <!-- stage boxes -->
+          <rect id="box1" class="stage-box" x="452" y="122" width="576" height="116"/>
+          <text class="stage-label" x="465" y="118">第 1 层 CSA：列 1～4 并行</text>
+          <rect id="box2" class="stage-box" x="292" y="305" width="576" height="116"/>
+          <text class="stage-label" x="305" y="301">第 2 层 CSA：列 2～5 并行</text>
+          <rect id="box3" class="stage-box" x="132" y="500" width="576" height="116"/>
+          <text class="stage-label" x="145" y="496">最终行：仅此处保留横向 Carry 链</text>
+
+          <!-- stage1 gates -->
+          <g class="gate" id="g1c4"><rect x="470" y="145" width="110" height="74"/><text class="kind" x="525" y="176" text-anchor="middle">FA</text><text id="g1c4io" class="io" x="525" y="199" text-anchor="middle">S=?, C=?</text></g>
+          <g class="gate" id="g1c3"><rect x="630" y="145" width="110" height="74"/><text class="kind" x="685" y="176" text-anchor="middle">FA</text><text id="g1c3io" class="io" x="685" y="199" text-anchor="middle">S=?, C=?</text></g>
+          <g class="gate" id="g1c2"><rect x="790" y="145" width="110" height="74"/><text class="kind" x="845" y="176" text-anchor="middle">FA</text><text id="g1c2io" class="io" x="845" y="199" text-anchor="middle">S=?, C=?</text></g>
+          <g class="gate" id="g1c1"><rect x="950" y="145" width="110" height="74"/><text class="kind" x="1005" y="176" text-anchor="middle">HA</text><text id="g1c1io" class="io" x="1005" y="199" text-anchor="middle">S=?, C=?</text></g>
+
+          <!-- stage1 outputs -->
+          <g data-stage="2">
+            <path id="s1c4" class="wire sum-wire stage-wire" d="M525 219 V325"/>
+            <path id="c1c4" class="wire carry-wire stage-wire" d="M500 219 C470 250 430 275 365 325"/>
+            <path id="s1c3" class="wire sum-wire stage-wire" d="M685 219 V325"/>
+            <path id="c1c3" class="wire carry-wire stage-wire" d="M660 219 C630 250 590 275 525 325"/>
+            <path id="s1c2" class="wire sum-wire stage-wire" d="M845 219 V325"/>
+            <path id="c1c2" class="wire carry-wire stage-wire" d="M820 219 C790 250 750 275 685 325"/>
+            <path id="s1out" class="wire sum-wire stage-wire" d="M1005 219 V625"/>
+            <path id="c1c1" class="wire carry-wire stage-wire" d="M980 219 C950 250 910 275 845 325"/>
+            <path class="wire pp-wire stage-wire" d="M330 245 V325"/>
+            <path class="wire pp-wire stage-wire" d="M365 278 V325"/>
+            <path class="wire pp-wire stage-wire" d="M525 278 V325"/>
+            <path class="wire pp-wire stage-wire" d="M685 278 V325"/>
+          </g>
+
+          <!-- stage2 gates -->
+          <g class="gate" id="g2c5"><rect x="310" y="328" width="110" height="74"/><text class="kind" x="365" y="359" text-anchor="middle">FA</text><text id="g2c5io" class="io" x="365" y="382" text-anchor="middle">S=?, C=?</text></g>
+          <g class="gate" id="g2c4"><rect x="470" y="328" width="110" height="74"/><text class="kind" x="525" y="359" text-anchor="middle">FA</text><text id="g2c4io" class="io" x="525" y="382" text-anchor="middle">S=?, C=?</text></g>
+          <g class="gate" id="g2c3"><rect x="630" y="328" width="110" height="74"/><text class="kind" x="685" y="359" text-anchor="middle">FA</text><text id="g2c3io" class="io" x="685" y="382" text-anchor="middle">S=?, C=?</text></g>
+          <g class="gate" id="g2c2"><rect x="790" y="328" width="110" height="74"/><text class="kind" x="845" y="359" text-anchor="middle">HA</text><text id="g2c2io" class="io" x="845" y="382" text-anchor="middle">S=?, C=?</text></g>
+
+          <!-- stage2 outputs -->
+          <g data-stage="3">
+            <path class="wire sum-wire stage-wire" d="M365 402 V520"/>
+            <path class="wire carry-wire stage-wire" d="M340 402 C310 435 270 465 205 520"/>
+            <path class="wire sum-wire stage-wire" d="M525 402 V520"/>
+            <path class="wire carry-wire stage-wire" d="M500 402 C470 435 430 465 365 520"/>
+            <path class="wire sum-wire stage-wire" d="M685 402 V520"/>
+            <path class="wire carry-wire stage-wire" d="M660 402 C630 435 590 465 525 520"/>
+            <path id="s2out" class="wire sum-wire stage-wire" d="M845 402 V625"/>
+            <path class="wire carry-wire stage-wire" d="M820 402 C790 435 750 465 685 520"/>
+            <path class="wire pp-wire stage-wire" d="M180 475 V520"/>
+          </g>
+
+          <!-- final row gates -->
+          <g class="gate" id="gf6"><rect x="150" y="522" width="110" height="74"/><text class="kind" x="205" y="553" text-anchor="middle">FA</text><text id="gf6io" class="io" x="205" y="576" text-anchor="middle">S=?, C=?</text></g>
+          <g class="gate" id="gf5"><rect x="310" y="522" width="110" height="74"/><text class="kind" x="365" y="553" text-anchor="middle">FA</text><text id="gf5io" class="io" x="365" y="576" text-anchor="middle">S=?, C=?</text></g>
+          <g class="gate" id="gf4"><rect x="470" y="522" width="110" height="74"/><text class="kind" x="525" y="553" text-anchor="middle">FA</text><text id="gf4io" class="io" x="525" y="576" text-anchor="middle">S=?, C=?</text></g>
+          <g class="gate" id="gf3"><rect x="630" y="522" width="110" height="74"/><text class="kind" x="685" y="553" text-anchor="middle">HA</text><text id="gf3io" class="io" x="685" y="576" text-anchor="middle">S=?, C=?</text></g>
+
+          <!-- final horizontal ripple chain -->
+          <g>
+            <path id="r3to4" class="wire carry-wire stage-wire" data-stage="4" d="M630 559 H580"/>
+            <path id="r4to5" class="wire carry-wire stage-wire" data-stage="5" d="M470 559 H420"/>
+            <path id="r5to6" class="wire carry-wire stage-wire" data-stage="6" d="M310 559 H260"/>
+          </g>
+
+          <!-- final outputs -->
+          <g>
+            <path class="wire sum-wire stage-wire" data-stage="7" d="M205 596 V625"/>
+            <path class="wire carry-wire stage-wire" data-stage="7" d="M160 560 C120 590 90 615 65 630"/>
+            <path class="wire sum-wire stage-wire" data-stage="6" d="M365 596 V625"/>
+            <path class="wire sum-wire stage-wire" data-stage="5" d="M525 596 V625"/>
+            <path class="wire sum-wire stage-wire" data-stage="4" d="M685 596 V625"/>
+          </g>
+
+          <!-- output labels -->
+          <g>
+            <text class="out-label" x="45" y="653">S₇=<tspan id="o7" class="out-value">?</tspan></text>
+            <text class="out-label" x="180" y="653">S₆=<tspan id="o6" class="out-value">?</tspan></text>
+            <text class="out-label" x="340" y="653">S₅=<tspan id="o5" class="out-value">?</tspan></text>
+            <text class="out-label" x="500" y="653">S₄=<tspan id="o4" class="out-value">?</tspan></text>
+            <text class="out-label" x="660" y="653">S₃=<tspan id="o3" class="out-value">?</tspan></text>
+            <text class="out-label" x="820" y="653">S₂=<tspan id="o2" class="out-value">?</tspan></text>
+            <text class="out-label" x="980" y="653">S₁=<tspan id="o1" class="out-value">?</tspan></text>
+            <text class="out-label" x="1100" y="653">S₀=<tspan id="o0" class="out-value">?</tspan></text>
+          </g>
+        </svg>
+      </div>
+    </section>
+
+    <aside class="card side">
+      <h3>当前步骤</h3>
+      <div id="stepTitle" class="step-title">0. 初始化</div>
+      <div id="stepText" class="step-text">
+        读取 A、B 两个 4 位输入。先观察权重列：最右侧是 2⁰，向左每列权重翻倍。
+      </div>
+      <div id="calcBox" class="calc-box">A = 1010₂ = 10
+B = 0111₂ = 7
+目标结果 = 70 = 01000110₂</div>
+
+      <ul class="flow-list">
+        <li><span class="dot pp"></span><span><b>紫色：</b>原始部分积 AᵢBⱼ。</span></li>
+        <li><span class="dot sum"></span><span><b>蓝色：</b>Sum，保持当前列权重，竖直传到下一层。</span></li>
+        <li><span class="dot carry"></span><span><b>橙色虚线：</b>Carry，权重提升一位，斜向左送到下一层。</span></li>
+      </ul>
+      <div class="footer-note">提示：最后一排才出现横向 Carry 链，这正是 CSA 把中间级横向进位推迟到最后的关键。</div>
+    </aside>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $ = (id)=>document.getElementById(id);
+  const aInput=$("aInput"), bInput=$("bInput");
+  const resultBits=$("resultBits"), resultDec=$("resultDec");
+  const timeline=$("timeline"), stepChip=$("stepChip");
+  const stepTitle=$("stepTitle"), stepText=$("stepText"), calcBox=$("calcBox");
+  const speedSel=$("speedSel");
+  let step=0, timer=null;
+
+  function bits4(s){
+    s=(s||"").replace(/[^01]/g,"").slice(0,4).padStart(4,"0");
+    return s;
+  }
+  function bitArray(s){
+    s=bits4(s);
+    return [Number(s[3]),Number(s[2]),Number(s[1]),Number(s[0])];
+  }
+  function ha(x,y){ return {s:x^y,c:x&y}; }
+  function fa(x,y,z){ return {s:x^y^z,c:(x&y)|(x&z)|(y&z)}; }
+  function pad8(n){ return n.toString(2).padStart(8,"0"); }
+
+  function compute(){
+    const A=bits4(aInput.value), B=bits4(bInput.value);
+    aInput.value=A; bInput.value=B;
+    const a=bitArray(A), b=bitArray(B);
+    const p=(i,j)=>a[i]&b[j];
+
+    const g1c1=ha(p(1,0),p(0,1));
+    const g1c2=fa(p(2,0),p(1,1),p(0,2));
+    const g1c3=fa(p(3,0),p(2,1),p(1,2));
+    const g1c4=fa(0,p(3,1),p(2,2));
+
+    const g2c2=ha(g1c2.s,g1c1.c);
+    const g2c3=fa(g1c3.s,g1c2.c,p(0,3));
+    const g2c4=fa(g1c4.s,g1c3.c,p(1,3));
+    const g2c5=fa(p(3,2),p(2,3),g1c4.c);
+
+    const gf3=ha(g2c3.s,g2c2.c);
+    const gf4=fa(g2c4.s,g2c3.c,gf3.c);
+    const gf5=fa(g2c5.s,g2c4.c,gf4.c);
+    const gf6=fa(p(3,3),g2c5.c,gf5.c);
+
+    const out=[p(0,0),g1c1.s,g2c2.s,gf3.s,gf4.s,gf5.s,gf6.s,gf6.c];
+    const val=out.reduce((acc,v,i)=>acc+(v<<i),0);
+
+    return {A,B,a,b,p,g1c1,g1c2,g1c3,g1c4,g2c2,g2c3,g2c4,g2c5,gf3,gf4,gf5,gf6,out,val};
+  }
+
+  function updateStatic(d){
+    const av=parseInt(d.A,2), bv=parseInt(d.B,2);
+    resultBits.textContent=pad8(d.val);
+    resultDec.textContent="= "+d.val;
+    $("pp0").textContent=pad8(av*(d.b[0]<<0));
+    $("pp1").textContent=pad8(av*(d.b[1]<<1));
+    $("pp2").textContent=pad8(av*(d.b[2]<<2));
+    $("pp3").textContent=pad8(av*(d.b[3]<<3));
+    for(let i=0;i<4;i++){
+      for(let j=0;j<4;j++){
+        const el=$("v"+i+j);
+        if(el) el.textContent=d.p(i,j);
+      }
+    }
+  }
+
+  function clearVisual(){
+    document.querySelectorAll(".stage-wire").forEach(el=>{
+      el.classList.remove("active","done","dim");
+      el.classList.add("dim");
+    });
+    document.querySelectorAll(".gate").forEach(el=>el.classList.remove("active","done"));
+    document.querySelectorAll(".stage-box").forEach(el=>el.classList.remove("active"));
+    ["g1c4io","g1c3io","g1c2io","g1c1io","g2c5io","g2c4io","g2c3io","g2c2io","gf6io","gf5io","gf4io","gf3io"].forEach(id=>$(id).textContent="S=?, C=?");
+    for(let i=0;i<8;i++) $("o"+i).textContent="?";
+  }
+
+  function revealStage(n){
+    document.querySelectorAll(`[data-stage="${n}"]`).forEach(el=>{
+      el.classList.remove("dim"); el.classList.add("active");
+    });
+  }
+  function markPast(n){
+    for(let s=1;s<n;s++){
+      document.querySelectorAll(`[data-stage="${s}"]`).forEach(el=>{
+        el.classList.remove("dim","active"); el.classList.add("done");
+      });
+    }
+  }
+  function gateState(ids,cls){
+    ids.forEach(id=>$(id).classList.add(cls));
+  }
+
+  function render(){
+    const d=compute();
+    updateStatic(d);
+    clearVisual();
+    markPast(step);
+    stepChip.textContent=step+" / 7";
+    timeline.value=step;
+
+    const setOut=(i,v)=>$("o"+i).textContent=v;
+    const io=(id,g)=>$(id).textContent=`S=${g.s}, C=${g.c}`;
+
+    if(step===0){
+      stepTitle.textContent="0. 初始化";
+      stepText.textContent="读取两个 4 位输入，建立 2⁰～2⁶ 的权重列。还没有进行任何部分积压缩。";
+      calcBox.textContent=`A = ${d.A}₂ = ${parseInt(d.A,2)}\nB = ${d.B}₂ = ${parseInt(d.B,2)}\n目标结果 = ${d.val} = ${pad8(d.val)}₂`;
+      return;
+    }
+
+    revealStage(1);
+    if(step>=1){
+      setOut(0,d.out[0]);
+      stepTitle.textContent="1. 生成部分积";
+      stepText.textContent="每个 AᵢBⱼ 都由一位 AND 得到。相同权重的部分积被送到同一列；A₀B₀ 不需要加法，直接成为 S₀。";
+      calcBox.textContent=
+`A=${d.A}, B=${d.B}
+PP₀=${$("pp0").textContent}
+PP₁=${$("pp1").textContent}
+PP₂=${$("pp2").textContent}
+PP₃=${$("pp3").textContent}
+
+S₀ = A₀B₀ = ${d.out[0]}`;
+    }
+    if(step===1) return;
+
+    document.querySelectorAll('[data-stage="1"]').forEach(el=>{el.classList.remove("active");el.classList.add("done");});
+    revealStage(2); $("box1").classList.add("active");
+    gateState(["g1c4","g1c3","g1c2","g1c1"],"active");
+    io("g1c4io",d.g1c4); io("g1c3io",d.g1c3); io("g1c2io",d.g1c2); io("g1c1io",d.g1c1);
+    setOut(0,d.out[0]); setOut(1,d.out[1]);
+
+    if(step>=2){
+      stepTitle.textContent="2. 第 1 层 CSA：4 列同时压缩";
+      stepText.textContent="右侧 HA 和三个 FA 同时工作。Sum 仍属于本列，竖直向下；Carry 权重提升一位，沿斜线送到下一层。HA 的 Sum 直接得到 S₁。";
+      calcBox.textContent=
+`列1 HA: A₁B₀(${d.p(1,0)}) + A₀B₁(${d.p(0,1)})
+      → S=${d.g1c1.s}, C=${d.g1c1.c}  ⇒ S₁=${d.out[1]}
+
+列2 FA: ${d.p(2,0)}+${d.p(1,1)}+${d.p(0,2)} → S=${d.g1c2.s}, C=${d.g1c2.c}
+列3 FA: ${d.p(3,0)}+${d.p(2,1)}+${d.p(1,2)} → S=${d.g1c3.s}, C=${d.g1c3.c}
+列4 FA: 0+${d.p(3,1)}+${d.p(2,2)} → S=${d.g1c4.s}, C=${d.g1c4.c}`;
+    }
+    if(step===2) return;
+
+    $("box1").classList.remove("active");
+    gateState(["g1c4","g1c3","g1c2","g1c1"],"done");
+    revealStage(3); $("box2").classList.add("active");
+    gateState(["g2c5","g2c4","g2c3","g2c2"],"active");
+    io("g2c5io",d.g2c5); io("g2c4io",d.g2c4); io("g2c3io",d.g2c3); io("g2c2io",d.g2c2);
+    setOut(2,d.out[2]);
+
+    if(step>=3){
+      stepTitle.textContent="3. 第 2 层 CSA：继续压缩";
+      stepText.textContent="上一层的 Sum、Carry 与 B₃ 对应的部分积再次按权重组合。仍然没有形成整行横向 Carry 链；右侧 HA 的 Sum 直接成为 S₂。";
+      calcBox.textContent=
+`列2 HA: S₁层列2(${d.g1c2.s}) + C₁层列1(${d.g1c1.c})
+      → S=${d.g2c2.s}, C=${d.g2c2.c}  ⇒ S₂=${d.out[2]}
+
+列3 FA: ${d.g1c3.s}+${d.g1c2.c}+A₀B₃(${d.p(0,3)}) → S=${d.g2c3.s}, C=${d.g2c3.c}
+列4 FA: ${d.g1c4.s}+${d.g1c3.c}+A₁B₃(${d.p(1,3)}) → S=${d.g2c4.s}, C=${d.g2c4.c}
+列5 FA: A₃B₂(${d.p(3,2)})+A₂B₃(${d.p(2,3)})+${d.g1c4.c}
+      → S=${d.g2c5.s}, C=${d.g2c5.c}`;
+    }
+    if(step===3) return;
+
+    $("box2").classList.remove("active");
+    gateState(["g2c5","g2c4","g2c3","g2c2"],"done");
+    $("box3").classList.add("active");
+
+    // final row progressive
+    io("gf3io",d.gf3); io("gf4io",d.gf4); io("gf5io",d.gf5); io("gf6io",d.gf6);
+    setOut(0,d.out[0]); setOut(1,d.out[1]); setOut(2,d.out[2]);
+
+    if(step>=4){
+      revealStage(4); gateState(["gf3"],"active"); setOut(3,d.out[3]);
+      stepTitle.textContent="4. 最终行开始：先求 S₃";
+      stepText.textContent="中间两层已经完成并行压缩。最后一排才开始真正的横向进位传播：最右侧 HA 先合并列 3 的两个剩余 bit。";
+      calcBox.textContent=
+`最终列3 HA:
+${d.g2c3.s} + ${d.g2c2.c}
+→ S₃=${d.gf3.s}
+→ 横向 Carry=${d.gf3.c}`;
+    }
+    if(step===4) return;
+
+    gateState(["gf3"],"done");
+    document.querySelectorAll('[data-stage="4"]').forEach(el=>{el.classList.remove("active");el.classList.add("done");});
+    revealStage(5); gateState(["gf4"],"active"); setOut(4,d.out[4]);
+
+    if(step>=5){
+      stepTitle.textContent="5. 横向 Carry 到列 4";
+      stepText.textContent="列 4 的 FA 接收两路压缩结果，再加上来自列 3 的横向 Carry。这里开始体现最终一级的串行依赖。";
+      calcBox.textContent=
+`最终列4 FA:
+S₂层列4(${d.g2c4.s})
++ C₂层列3(${d.g2c3.c})
++ Carry_in(${d.gf3.c})
+→ S₄=${d.gf4.s}, Carry=${d.gf4.c}`;
+    }
+    if(step===5) return;
+
+    gateState(["gf4"],"done");
+    document.querySelectorAll('[data-stage="5"]').forEach(el=>{el.classList.remove("active");el.classList.add("done");});
+    revealStage(6); gateState(["gf5"],"active"); setOut(5,d.out[5]);
+
+    if(step>=6){
+      stepTitle.textContent="6. 横向 Carry 到列 5";
+      stepText.textContent="列 5 继续做最后一级进位合并。本例中 1+1+0=10₂，因此 S₅=0，并产生 Carry=1 送往列 6。";
+      calcBox.textContent=
+`最终列5 FA:
+S₂层列5(${d.g2c5.s})
++ C₂层列4(${d.g2c4.c})
++ Carry_in(${d.gf4.c})
+→ S₅=${d.gf5.s}, Carry=${d.gf5.c}`;
+    }
+    if(step===6) return;
+
+    gateState(["gf5"],"done");
+    document.querySelectorAll('[data-stage="6"]').forEach(el=>{el.classList.remove("active");el.classList.add("done");});
+    revealStage(7); gateState(["gf6"],"active");
+    setOut(6,d.out[6]); setOut(7,d.out[7]);
+
+    stepTitle.textContent="7. 最高位完成，得到最终乘积";
+    stepText.textContent="最后一个 FA 合并 A₃B₃、第二层最高 Carry 和横向 Carry，产生 S₆ 与 S₇。至此 8 位结果全部确定。";
+    calcBox.textContent=
+`最终列6 FA:
+A₃B₃(${d.p(3,3)})
++ C₂层列5(${d.g2c5.c})
++ Carry_in(${d.gf5.c})
+→ S₆=${d.gf6.s}, S₇=${d.gf6.c}
+
+结果：
+S₇…S₀ = ${pad8(d.val)}
+${parseInt(d.A,2)} × ${parseInt(d.B,2)} = ${d.val}`;
+  }
+
+  function stopAuto(){
+    if(timer){ clearInterval(timer); timer=null; }
+    $("autoBtn").textContent="自动播放";
+  }
+  function setStep(n){
+    step=Math.max(0,Math.min(7,n));
+    render();
+    if(step===7) stopAuto();
+  }
+  $("resetBtn").addEventListener("click",()=>{ stopAuto(); setStep(0); });
+  $("prevBtn").addEventListener("click",()=>{ stopAuto(); setStep(step-1); });
+  $("nextBtn").addEventListener("click",()=>{ stopAuto(); setStep(step+1); });
+  $("autoBtn").addEventListener("click",()=>{
+    if(timer){ stopAuto(); return; }
+    $("autoBtn").textContent="暂停";
+    if(step===7) setStep(0);
+    timer=setInterval(()=>setStep(step+1),Number(speedSel.value));
+  });
+  speedSel.addEventListener("change",()=>{
+    if(timer){
+      clearInterval(timer);
+      timer=setInterval(()=>setStep(step+1),Number(speedSel.value));
+    }
+  });
+  timeline.addEventListener("input",()=>{ stopAuto(); setStep(Number(timeline.value)); });
+  aInput.addEventListener("input",()=>{ stopAuto(); step=0; render(); });
+  bInput.addEventListener("input",()=>{ stopAuto(); step=0; render(); });
+
+  render();
+})();
+</script>
+</body>
+</html>
